@@ -22,6 +22,8 @@ import {
 
 import './index.less'
 
+import FlexProcess from './service';
+
 const { Title } = Typography;
 
 class Content extends PureComponent {
@@ -36,54 +38,116 @@ class Content extends PureComponent {
     };
   }
 
-  componentDidMount() {
-    const initialData = [
-      {
-        key: '1',
-        email: 'john.doe@company.com',
-        name: 'John Doe',
-        user: '约翰·多伊',
-      },
-      {
-        key: '2',
-        email: 'jane.smith@company.com',
-        name: 'Jane Smith',
-        user: '简·史密斯',
-      },
-      {
-        key: '3',
-        email: 'robert.johnson@company.com',
-        name: 'Robert Johnson',
-        user: '罗伯特·约翰逊',
-      },
-    ];
-    this.setState({ emails: initialData });
+  async componentDidMount() {
+    try {
+      // 使用 FlexProcess 获取邮箱列表数据
+      const result = await FlexProcess('handleEmail', {
+        action: 'query',
+        params: {}
+      });
+      
+      if (result && result.data) {
+        this.setState({ emails: result.data });
+      } else {
+        // 如果接口没有返回数据，使用默认数据
+        const initialData = [
+          {
+            key: '1',
+            email: 'john.doe@company.com',
+            name: 'John Doe',
+            user: '约翰·多伊',
+          },
+          {
+            key: '2',
+            email: 'jane.smith@company.com',
+            name: 'Jane Smith',
+            user: '简·史密斯',
+          },
+          {
+            key: '3',
+            email: 'robert.johnson@company.com',
+            name: 'Robert Johnson',
+            user: '罗伯特·约翰逊',
+          },
+        ];
+        this.setState({ emails: initialData });
+      }
+    } catch (error) {
+      console.error('获取邮箱列表失败:', error);
+      message.error('获取邮箱列表失败');
+      // 错误时仍使用默认数据
+      const initialData = [
+        {
+          key: '1',
+          email: 'john.doe@company.com',
+          name: 'John Doe',
+          user: '约翰·多伊',
+        },
+        {
+          key: '2',
+          email: 'jane.smith@company.com',
+          name: 'Jane Smith',
+          user: '简·史密斯',
+        },
+        {
+          key: '3',
+          email: 'robert.johnson@company.com',
+          name: 'Robert Johnson',
+          user: '罗伯特·约翰逊',
+        },
+      ];
+      this.setState({ emails: initialData });
+    }
   }
 
   // 表单提交处理（新增/更新）
-  onFinish = (values) => {
+  onFinish = async (values) => {
     this.setState({ loading: true });
     
-    // 模拟API调用延迟
-    setTimeout(() => {
-      const { isEditing, editingKey, emails } = this.state;
+    try {
+      const { isEditing, editingKey } = this.state;
       
       if (isEditing && editingKey) {
         // 更新现有记录
-        const updatedEmails = emails.map(item =>
-          item.key === editingKey ? { ...values, key: editingKey } : item
-        );
-        this.setState({ emails: updatedEmails });
-        message.success('邮箱信息更新成功');
+        const result = await FlexProcess('handleEmail', {
+          action: 'update',
+          params: {
+            key: editingKey,
+            ...values
+          }
+        });
+        
+        if (result && result.success) {
+          // 更新本地数据
+          const { emails } = this.state;
+          const updatedEmails = emails.map(item =>
+            item.key === editingKey ? { ...values, key: editingKey } : item
+          );
+          this.setState({ emails: updatedEmails });
+          message.success('邮箱信息更新成功');
+        } else {
+          message.error('邮箱信息更新失败');
+        }
       } else {
         // 新增记录
-        const newKey = Date.now().toString();
-        const newEmail = {
-          key: newKey,
-          ...values,
-        };
-        this.setState({ emails: [...emails, newEmail] });
-        message.success('邮箱信息添加成功');
+        const result = await FlexProcess('handleEmail', {
+          action: 'add',
+          params: values
+        });
+        
+        if (result && result.success) {
+          // 添加新记录到本地数据
+          const { emails } = this.state;
+          const newKey = result.data?.key || Date.now().toString();
+          const newEmail = {
+            key: newKey,
+            ...values,
+          };
+          this.setState({ emails: [...emails, newEmail] });
+          message.success('邮箱信息添加成功');
+        } else {
+          message.error('邮箱信息添加失败');
+        }
       }
       
       // 重置表单和状态
@@ -93,7 +157,11 @@ class Content extends PureComponent {
         editingKey: null,
         loading: false
       });
-    }, 300);
+    } catch (error) {
+      console.error('操作失败:', error);
+      message.error('操作失败，请重试');
+      this.setState({ loading: false });
+    }
   };
 
   // 编辑邮箱信息
@@ -110,19 +178,34 @@ class Content extends PureComponent {
   };
 
   // 删除邮箱信息
-  handleDelete = (key) => {
-    const { emails, editingKey } = this.state;
-    const newEmails = emails.filter(item => item.key !== key);
-    this.setState({ emails: newEmails });
-    message.success('邮箱信息删除成功');
-    
-    // 如果正在编辑被删除的项，重置表单
-    if (editingKey === key) {
-      this.formRef.current.resetFields();
-      this.setState({
-        isEditing: false,
-        editingKey: null
+  handleDelete = async (key) => {
+    try {
+      // 调用 FlexProcess 删除接口
+      const result = await FlexProcess('handleEmail', {
+        action: 'delete',
+        params: { key: key }
       });
+      
+      if (result && result.success) {
+        const { emails, editingKey } = this.state;
+        const newEmails = emails.filter(item => item.key !== key);
+        this.setState({ emails: newEmails });
+        message.success('邮箱信息删除成功');
+        
+        // 如果正在编辑被删除的项，重置表单
+        if (editingKey === key) {
+          this.formRef.current.resetFields();
+          this.setState({
+            isEditing: false,
+            editingKey: null
+          });
+        }
+      } else {
+        message.error('邮箱信息删除失败');
+      }
+    } catch (error) {
+      console.error('删除失败:', error);
+      message.error('删除失败，请重试');
     }
   };
 
